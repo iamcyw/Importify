@@ -23,8 +23,10 @@ class Spotify():
         self.user_id = user_id
         self.s = requests.session()
         self.s.headers['Authorization'] = 'Bearer '+self.access_token
+        self.singer_map = {}
+        self.singer_no_map = {}
 
-    def search(self, song, singer, market=None):
+    def search(self, song, singer, market=None, confirm=False):
         if market:
             url = Spotify.search_track_api.format(quote(song))+'&market='+quote(market)
         else:
@@ -42,22 +44,38 @@ class Spotify():
         for one in tracks['items']:
             r_singer = one['artists'][0]['name'].lower()
             r_song = one['name'].lower()
-            if r_song == song.lower() and r_singer == singer.lower():
+            if r_song != song.lower(): continue
+            if r_singer == singer.lower() \
+               or self.singer_map.get(r_singer) == singer.lower():
                 song_uri = one['uri']
                 break
+            elif confirm \
+                 and not self.singer_no_map.get(r_singer) \
+                 and self.singer_no_map.get(r_singer) != singer.lower():
+                print('song: %s\tsinger: %s\nsinger in spotify: %s'
+                      % (song, singer, r_singer.lower()))
+                map_singer = input('is singer in spotify matches the singer:(y/n):')
+                if map_singer == 'y':
+                    self.singer_map[r_singer] = singer.lower()
+                    song_uri = one['uri']
+                    break
+                else:
+                    self.singer_no_map[r_singer] = singer.lower()
+                    print('not match')
+
         if song_uri == '':
             return {'status': False, 'info': 'no results'}
         return {'status': True, 'info': song_uri}
 
-    def search_songs(self, songs, market=None):
+    def search_songs(self, songs, market=None, confirm=False):
         success_l = []
         fail_l = []
         again_l = []
         for one in songs:
             song = one['song']
             singer = one['singer']
-            search = self.search(song, singer, market)
-            if search['status'] == 200:
+            search = self.search(song, singer, market, confirm)
+            if search['status']:
                 print(song + ' success')
                 one['uri'] = search['info']
                 success_l.append(one)
@@ -135,7 +153,7 @@ def migrate(log, user_id, access_token, songs, play_list_name, market=None, add=
 
     # search songs
     log.write('SEARCH SONGS:\n')
-    success_l, fail_l = spotify.search_songs(songs)
+    success_l, fail_l = spotify.search_songs(songs, confirm=True)
     for i, one in enumerate(success_l):
         log.write(str(i+1) + '. ' + one['song'] + ' - ' + one['singer'] + ' success.\n')
     log.write('\n\n')
@@ -179,17 +197,18 @@ def migrate(log, user_id, access_token, songs, play_list_name, market=None, add=
     log.close()
 
 
-origin_html_name = sys.argv[1]
-user_id = ''  # user id
-access_token = ''  # access token
-songs = extract_list_from_html(origin_html_name)
-playlist_name = origin_html_name.split('.')[0]
+if __name__ == '__main__':
+    origin_html_name = sys.argv[1]
+    user_id = ''  # user id
+    access_token = ''  # access token
+    songs = extract_list_from_html(origin_html_name)
+    playlist_name = origin_html_name.split('.')[0]
 
-log = open('log.txt', 'w', encoding='utf8')
-try:
-    migrate(log, user_id, access_token, songs, playlist_name, add=False)
-except Exception as e:
-    print(str(e))
-    print(format_exc())
-finally:
-    log.close()
+    log = open('log.txt', 'w', encoding='utf8')
+    try:
+        migrate(log, user_id, access_token, songs, playlist_name, add=False)
+    except Exception as e:
+        print(str(e))
+        print(format_exc())
+    finally:
+        log.close()
